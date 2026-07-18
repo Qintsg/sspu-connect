@@ -23,3 +23,6 @@ go.work
 
 # Config file
 config.toml
+
+# Local VPN credentials
+vpn.env

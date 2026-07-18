@@ -37,9 +37,9 @@ func main() {
 	log.Init()
 
 	if CommitID != "" {
-		log.Println("Start ZJU Connect v" + zjuConnectVersion + "-" + CommitID)
+		log.Println("Start SSPU Connect v" + zjuConnectVersion + "-" + CommitID)
 	} else {
-		log.Println("Start ZJU Connect v" + zjuConnectVersion)
+		log.Println("Start SSPU Connect v" + zjuConnectVersion)
 	}
 	if conf.DebugDump {
 		log.EnableDebug()

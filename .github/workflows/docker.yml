@@ -1,15 +1,7 @@
 name: Publish Docker image
 
 on:
-  release:
-    types: [ published ]
-  push:
-    paths:
-      - "**/*.go"
-      - "go.mod"
-      - "go.sum"
-      - ".github/workflows/*.yml"
-      - "Dockerfile"
+  workflow_dispatch:
 
 permissions: write-all
 
@@ -43,7 +35,7 @@ jobs:
         uses: docker/metadata-action@v3
         with:
           images: |
-            mythologyli/zju-connect
+            qintsg/sspu-connect
           tags: |
             type=schedule
             type=ref,event=branch

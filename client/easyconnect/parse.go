@@ -248,9 +248,13 @@ func (c *Client) parseResources(resources string) error {
 		c.dnsServer = ""
 	}
 
-	if c.dnsServer == "" {
-		return errors.New("DNS server invalid")
-	}
+	log.Printf(
+		"Parsed resources: IP rules=%d, domain rules=%d, DNS rules=%d, remote DNS available=%t",
+		len(c.ipResources),
+		len(c.domainResources),
+		len(c.dnsResource),
+		c.dnsServer != "",
+	)
 
 	return nil
 }

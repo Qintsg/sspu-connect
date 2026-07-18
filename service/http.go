@@ -52,15 +52,17 @@ func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
 		if req.Method == "CONNECT" {
 			serverConn, err := dialer.Dial(context.Background(), "tcp", req.Host)
 			if err != nil {
-				w.WriteHeader(500)
-				_, _ = w.Write([]byte(err.Error() + "\n"))
+				log.Printf("proxy protocol=http method=CONNECT host=%q status=FAILED error=%q", req.Host, err)
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte("upstream connection failed\n"))
 				return
 			}
 
 			hijacker, ok := w.(http.Hijacker)
 			if !ok {
 				_ = serverConn.Close()
-				w.WriteHeader(500)
+				log.Printf("proxy protocol=http method=CONNECT host=%q status=FAILED error=%q", req.Host, "response hijacking unsupported")
+				w.WriteHeader(http.StatusInternalServerError)
 				_, _ = w.Write([]byte("Failed cast to hijacker\n"))
 				return
 			}
@@ -69,7 +71,8 @@ func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
 
 			_, bio, err := hijacker.Hijack()
 			if err != nil {
-				w.WriteHeader(500)
+				log.Printf("proxy protocol=http method=CONNECT host=%q status=FAILED error=%q", req.Host, err)
+				w.WriteHeader(http.StatusInternalServerError)
 				_, _ = w.Write([]byte(err.Error() + "\n"))
 				_ = serverConn.Close()
 				return
@@ -86,8 +89,9 @@ func ServeHTTP(bindAddr string, dialer *dial.Dialer) {
 
 			resp, err := client.Do(req)
 			if err != nil {
-				w.WriteHeader(500)
-				_, _ = w.Write([]byte(err.Error() + "\n"))
+				log.Printf("proxy protocol=http method=%s host=%q status=FAILED error=%q", req.Method, req.Host, err)
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte("upstream connection failed\n"))
 				return
 			}
 

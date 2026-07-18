@@ -16,6 +16,8 @@ import (
 	"inet.af/netaddr"
 )
 
+var sessionKeepAliveInterval = 60 * time.Second
+
 type Client struct {
 	server            string // Example: rvpn.zju.edu.cn:443. No protocol prefix
 	username          string
@@ -77,6 +79,15 @@ func NewClient(server, username, password, totpSecret string, tlsCert tls.Certif
 // multiple times.
 func (c *Client) Close() {
 	c.closeOnce.Do(func() {
+		if c.twfID != "" {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := c.requestLogout(ctx); err != nil {
+				log.Printf("VPN session logout failed: %v", err)
+			} else {
+				log.Print("VPN session logged out")
+			}
+			cancel()
+		}
 		c.lifecycleCancel()
 		c.httpClient.CloseIdleConnections()
 		c.requestIPConnMu.Lock()
@@ -272,7 +283,7 @@ func (c *Client) dialContext(ctx context.Context, network, address string) (net.
 }
 
 func (c *Client) sessionKeepAliveLoop() {
-	ticker := time.NewTicker(60 * time.Second)
+	ticker := time.NewTicker(sessionKeepAliveInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -280,8 +291,11 @@ func (c *Client) sessionKeepAliveLoop() {
 			return
 		case <-ticker.C:
 			ctx, cancel := context.WithTimeout(c.lifecycleCtx, 10*time.Second)
+			err := c.requestUpdateSession(ctx)
 			cancel()
-			if err := c.requestUpdateSession(ctx); err != nil {
+			if err == nil {
+				log.Print("session keepalive status=OK")
+			} else {
 				if err == errNotFound {
 					log.Println("server does not support update_session, stopping keepalive")
 					return

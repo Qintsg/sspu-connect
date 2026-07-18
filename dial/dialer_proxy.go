@@ -8,13 +8,15 @@ import (
 	"strings"
 
 	"github.com/mythologyli/zju-connect/log"
+	"github.com/mythologyli/zju-connect/resolve"
 	"github.com/things-go/go-socks5/statute"
 )
 
 func (d *Dialer) dialDirectWithoutProxy(ctx context.Context, network, addr string) (net.Conn, error) {
 	goDialer := &net.Dialer{}
 	goDial := goDialer.DialContext
-	log.Printf("%s -> DIRECT", addr)
+	host, _ := ctx.Value(resolve.ContextKeyResolveHost).(string)
+	log.Printf("route host=%q destination=%q network=%s action=DIRECT reason=no-vpn-rule", host, addr, network)
 	return goDial(ctx, network, addr)
 }
 
@@ -23,7 +25,7 @@ func (d *Dialer) dialDirectWithHTTPProxy(ctx context.Context, usedAddr string) (
 	goDialer := &net.Dialer{}
 	goDial := goDialer.DialContext
 
-	log.Printf("%s -> PROXY[%s]", usedAddr, d.dialDirectHTTPProxy)
+	log.Printf("route destination=%q network=%s action=PROXY proxy=%q", usedAddr, "tcp", d.dialDirectHTTPProxy)
 	conn, err := goDial(ctx, "tcp", d.dialDirectHTTPProxy)
 	if err != nil {
 		return nil, err
@@ -50,7 +52,7 @@ func (d *Dialer) dialDirectWithSocksProxy(ctx context.Context, network, usedAddr
 	goDialer := &net.Dialer{}
 	goDial := goDialer.DialContext
 
-	log.Printf("%s -> PROXY[%s]", usedAddr, d.dialDirectSocksProxy)
+	log.Printf("route destination=%q network=%s action=PROXY proxy=%q", usedAddr, network, d.dialDirectSocksProxy)
 	conn, err := goDial(ctx, "tcp", d.dialDirectSocksProxy)
 	if err != nil {
 		return nil, err

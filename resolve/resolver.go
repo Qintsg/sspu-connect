@@ -59,7 +59,7 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 	var domainResource client.DomainResource
 	if r.domainResources != nil {
 		for domain, resource := range r.domainResources {
-			if strings.HasSuffix(host, domain) {
+			if domainMatches(host, domain) {
 				domainResourceFound = true
 				domainResource = resource
 				ctx = context.WithValue(ctx, ContextKeyDomainResource, resource)
@@ -70,13 +70,13 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 	}
 
 	if cachedIP, found := r.getDNSCache(host); found {
-		log.Printf("%s -> %s", host, cachedIP.String())
+		log.Printf("dns host=%q address=%s source=cache", host, cachedIP.String())
 		return ctx, cachedIP, nil
 	}
 
 	if r.dnsResource != nil {
 		if ip, found := r.dnsResource[host]; found {
-			log.Printf("%s -> %s", host, ip.String())
+			log.Printf("dns host=%q address=%s source=server-resource", host, ip.String())
 			if domainResourceFound {
 				err := r.IPPool.SetIPDomain(ip, host, domainResource)
 				if err != nil {
@@ -89,7 +89,7 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 		if fakeIPValue := ctx.Value(ContextKeyFakeIP); fakeIPValue != nil {
 			if domainResourceFound {
 				ip := r.IPPool.GenerateIP(host, domainResource)
-				log.Printf("%s -> %s (Fake IP)", host, ip.String())
+				log.Printf("dns host=%q address=%s source=internal-fake-ip", host, ip.String())
 				return ctx, ip, nil
 			}
 		}
@@ -108,7 +108,7 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 					if ips, err = r.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
 						resolveLock.Unlock()
 						// All remote DNS failed, so we keep do nothing but use secondary dns
-						log.Printf("Resolve IPv4 addr failed using remote UDP/TCP DNS: %s, using secondary DNS instead", host)
+						log.Printf("dns host=%q source=remote status=FAILED fallback=secondary", host)
 						return r.ResolveWithSecondaryDNS(ctx, host)
 					} else {
 						r.tcpLock.Lock()
@@ -127,18 +127,18 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 				// Set DNS cache if tcp or udp DNS success
 				r.setDNSCache(host, ips[0])
 				resolveLock.Unlock()
-				log.Printf("%s -> %s", host, ips[0].String())
+				log.Printf("dns host=%q address=%s source=remote", host, ips[0].String())
 				return ctx, ips[0], nil
 			} else {
 				// Only try tcp and secondary DNS
 				if ips, err := r.remoteTCPResolver.LookupIP(context.Background(), "ip4", host); err != nil {
 					resolveLock.Unlock()
-					log.Printf("Resolve IPv4 addr failed using remote TCP DNS: %s, using secondary DNS instead", host)
+					log.Printf("dns host=%q source=remote-tcp status=FAILED fallback=secondary", host)
 					return r.ResolveWithSecondaryDNS(ctx, host)
 				} else {
 					r.setDNSCache(host, ips[0])
 					resolveLock.Unlock()
-					log.Printf("%s -> %s", host, ips[0].String())
+					log.Printf("dns host=%q address=%s source=remote-tcp", host, ips[0].String())
 					return ctx, ips[0], nil
 				}
 			}
@@ -155,6 +155,17 @@ func (r *Resolver) Resolve(ctx context.Context, host string) (resCtx context.Con
 	} else {
 		return r.ResolveWithSecondaryDNS(ctx, host)
 	}
+}
+
+func domainMatches(host, domain string) bool {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	domain = strings.TrimSpace(strings.ToLower(domain))
+	domain = strings.TrimPrefix(domain, "*.")
+	domain = strings.Trim(domain, ".")
+	if domain == "" {
+		return false
+	}
+	return host == domain || strings.HasSuffix(host, "."+domain)
 }
 
 func (r *Resolver) RemoteUDPResolver() (*net.Resolver, error) {
@@ -175,17 +186,17 @@ func (r *Resolver) RemoteTCPResolver() (*net.Resolver, error) {
 
 func (r *Resolver) ResolveWithSecondaryDNS(ctx context.Context, host string) (context.Context, net.IP, error) {
 	if targets, err := r.secondaryResolver.LookupIP(ctx, "ip4", host); err != nil {
-		log.Printf("Resolve IPv4 addr failed using secondary DNS: %s. Try IPv6 addr", host)
+		log.Printf("dns host=%q source=secondary family=ipv4 status=FAILED fallback=ipv6", host)
 
 		if targets, err = r.secondaryResolver.LookupIP(ctx, "ip6", host); err != nil {
-			log.Printf("Resolve IPv6 addr failed using secondary DNS: %s", host)
+			log.Printf("dns host=%q source=secondary family=ipv6 status=FAILED", host)
 			return ctx, nil, err
 		} else {
-			log.Printf("%s -> %s", host, targets[0].String())
+			log.Printf("dns host=%q address=%s source=secondary family=ipv6", host, targets[0].String())
 			return ctx, targets[0], nil
 		}
 	} else {
-		log.Printf("%s -> %s", host, targets[0].String())
+		log.Printf("dns host=%q address=%s source=secondary family=ipv4", host, targets[0].String())
 		return ctx, targets[0], nil
 	}
 }
@@ -200,7 +211,6 @@ func (r *Resolver) Close() {
 		r.tcpLock.Unlock()
 	})
 }
-
 
 func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, ttl uint64, domainResources map[string]client.DomainResource, dnsResource map[string]net.IP, useRemoteDNS bool) *Resolver {
 	//domainSuffixTree := domainsuffixtrie.NewDomainSuffixTrie[bool]()
@@ -227,11 +237,11 @@ func NewResolver(stack stack.Stack, remoteDNSServer, secondaryDNSServer string, 
 				})
 			},
 		},
-		ttl:              ttl,
-		domainResources:  domainResources,
-		dnsResource:      dnsResource,
-		dnsCache:         cache.New(time.Duration(ttl)*time.Second, time.Duration(ttl)*2*time.Second),
-		useRemoteDNS: useRemoteDNS,
+		ttl:             ttl,
+		domainResources: domainResources,
+		dnsResource:     dnsResource,
+		dnsCache:        cache.New(time.Duration(ttl)*time.Second, time.Duration(ttl)*2*time.Second),
+		useRemoteDNS:    useRemoteDNS,
 	}
 
 	if secondaryDNSServer != "" {

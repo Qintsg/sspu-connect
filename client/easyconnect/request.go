@@ -89,7 +89,7 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 	}
 
 	c.twfID = string(regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())[1])
-	log.Printf("TWFID: %s", c.twfID)
+	log.Print("TWFID received")
 
 	rsaKey := string(regexp.MustCompile(`<RSA_ENCRYPT_KEY>(.*)</RSA_ENCRYPT_KEY>`).FindSubmatch(buf.Bytes())[1])
 	log.Printf("RSA key: %s", rsaKey)
@@ -109,7 +109,7 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 	password := c.password
 	if csrfMatch != nil {
 		csrfCode = string(csrfMatch[1])
-		log.Printf("CSRF Code: %s", csrfCode)
+		log.Print("CSRF code received")
 		password += "_" + csrfCode
 	} else {
 		log.Printf("Warning: No CSRF rand code")
@@ -232,7 +232,7 @@ func (c *Client) loginAuthAndPsw(graphCodeFile string) error {
 	twfIDMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())
 	if twfIDMatch != nil {
 		c.twfID = string(twfIDMatch[1])
-		log.Printf("Update TWFID: %s", c.twfID)
+		log.Print("TWFID updated")
 	}
 
 	log.Printf("TWFID has been authorized")
@@ -311,7 +311,7 @@ func (c *Client) loginSMS() error {
 	twfIDMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())
 	if twfIDMatch != nil {
 		c.twfID = string(twfIDMatch[1])
-		log.Printf("Update TWFID: %s", c.twfID)
+		log.Print("TWFID updated")
 	}
 	log.Print("SMS code verification success")
 
@@ -443,7 +443,7 @@ func (c *Client) loginCert() error {
 	twfIDMatch := regexp.MustCompile(`<TwfID>(.*)</TwfID>`).FindSubmatch(buf.Bytes())
 	if twfIDMatch != nil {
 		c.twfID = string(twfIDMatch[1])
-		log.Printf("Update TWFID: %s", c.twfID)
+		log.Print("TWFID updated")
 	}
 
 	if strings.Contains(response, "<pwpErrorCode>16</pwpErrorCode>") {
@@ -504,7 +504,11 @@ func (c *Client) requestUpdateSession(ctx context.Context) error {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		var requestErr *url.Error
+		if errors.As(err, &requestErr) {
+			return fmt.Errorf("update_session request failed: %w", requestErr.Err)
+		}
+		return fmt.Errorf("update_session request failed: %w", err)
 	}
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
@@ -533,6 +537,36 @@ func (c *Client) requestUpdateSession(ctx context.Context) error {
 	}
 	if reply.Message != "success" || reply.ErrorCode != "1" {
 		return fmt.Errorf("update_session: unexpected reply message=%q error_code=%q", reply.Message, reply.ErrorCode)
+	}
+	return nil
+}
+
+func (c *Client) requestLogout(ctx context.Context) error {
+	u := url.URL{
+		Scheme: "https",
+		Host:   c.server,
+		Path:   "/por/logout.csp",
+	}
+	q := url.Values{}
+	q.Set("rnd", strconv.FormatInt(time.Now().UnixNano(), 10))
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Cookie", "TWFID="+c.twfID)
+	req.Header.Set("User-Agent", "EasyConnect_Linux_Ubuntu")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("logout: unexpected status %d", resp.StatusCode)
 	}
 	return nil
 }
@@ -589,7 +623,7 @@ func (c *Client) requestToken() error {
 	}
 
 	sessionID := hex.EncodeToString(conn.HandshakeState.ServerHello.SessionId)
-	log.Printf("Server session ID: %s", sessionID)
+	log.Print("Server session ID received")
 
 	buf := make([]byte, 8)
 	n, err := conn.Read(buf)
@@ -599,7 +633,7 @@ func (c *Client) requestToken() error {
 
 	c.token = (*[48]byte)([]byte(sessionID[:31] + "\x00" + c.twfID))
 
-	log.Printf("Token: %s", hex.EncodeToString(c.token[:]))
+	log.Print("Tunnel token generated")
 
 	return nil
 }

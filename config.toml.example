@@ -1,9 +1,9 @@
 protocol = "easyconnect" # "easyconnect" or "atrust"
-server_address = "rvpn.zju.edu.cn"
+server_address = "vpn.sspu.edu.cn"
 server_port = 443
 username = "username"
 password = "password"
-disable_zju_config = false
+disable_zju_config = true
 disable_zju_dns = false
 socks_bind = ":1080"
 socks_user = ""

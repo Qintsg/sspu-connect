@@ -1,265 +1,195 @@
-# ZJU Connect
+# SSPU Connect
 
-> 🚫 **免责声明**
->
-> 本程序**按原样提供**，作者**不对程序的正确性或可靠性提供保证**，请使用者自行判断具体场景是否适合使用该程序，**使用该程序造成的问题或后果由使用者自行承担**！
+> 本项目是 [Mythologyli/zju-connect](https://github.com/Mythologyli/zju-connect) 的 SSPU（上海第二工业大学）独立优化适配版。底层 EasyConnect/aTrust、用户态网络栈与多数通用功能来自上游；本仓库专注于 `vpn.sspu.edu.cn` 的兼容性、会话管理、Clash 共存和可诊断日志。感谢 zju-connect 及更早的 [EasierConnect](https://github.com/lyc8503/EasierConnect) 项目。
 
----
+SSPU Connect 是非官方客户端，与上海第二工业大学、深信服及上游项目均无隶属关系。软件按原样提供，请遵守学校网络使用规定；因使用本软件产生的风险由使用者自行承担。
 
-中文 | [English](README_en.md)
+## SSPU 适配内容
 
-**本程序基于 [EasierConnect](https://github.com/lyc8503/EasierConnect)（现已停止维护）完成，感谢原作者 [lyc8503](https://github.com/lyc8503)。**
+- 默认使用 EasyConnect 协议连接 `vpn.sspu.edu.cn:443`。
+- 接受 SSPU 不下发远端 DNS 的服务端配置，保留服务端下发的 IP、域名和静态 DNS 资源。
+- 每 60 秒更新服务端会话，适配“约 1 小时无响应自动断连”的策略。
+- 退出时主动注销当前会话；重新登录可按 SSPU 行为覆盖同一账号已有的活跃连接。
+- 阻止 Clash Fake-IP（`198.18.0.0/15`）误入 VPN 隧道，降低错误分流造成的循环连接和频繁报错。
+- 域名规则按 DNS 标签边界匹配，避免 `not-example.edu.cn` 错误命中 `example.edu.cn`。
+- 路由、DNS、会话和代理错误使用结构化日志，同时隐藏 TWFID、隧道 token、会话 ID 等敏感信息。
 
-**QQ 交流群：1037726410**，欢迎使用者加入交流。
+SSPU 的账号规则是同一时间只保留一个 VPN 连接。启动新的连接可能挤掉同账号之前的连接，这是服务端的正常行为。
 
-### 使用方法
+## 快速开始
 
-#### 使用 GUI 版客户端
+### Windows 发行包
 
-+ 如果你是来自 ZJU 的用户：
-  + Windows 用户推荐使用 [ZJU Connect for Windows](https://github.com/mythologyli/zju-connect-for-Windows)。
-  + Linux/macOS 用户可以尝试使用 [Chenx Dust](https://github.com/chenx-dust) 开发的客户端 [EZ4Connect](https://github.com/chenx-dust/EZ4Connect)（推荐，支持 aTrust 协议）或 [kowyo](https://github.com/kowyo) 开发的客户端 [hitsz-connect-verge](https://github.com/kowyo/hitsz-connect-verge)。
-    注意请设置服务器地址为 `rvpn.zju.edu.cn:443`。
-+ 如果你是非 ZJU 的用户：
+1. 从 [Releases](https://github.com/Qintsg/sspu-connect/releases) 下载 `sspu-connect-v0.1.0-windows-amd64.zip` 并解压。
+2. 在解压目录复制 `vpn.env.example` 为 `vpn.env`，填写账号和密码。
+3. 在 PowerShell 中执行：
 
-  可以尝试使用 [Chenx Dust](https://github.com/chenx-dust) 开发的客户端 [EZ4Connect](https://github.com/chenx-dust/EZ4Connect)（推荐，支持 aTrust 协议）或 [kowyo](https://github.com/kowyo) 开发的客户端 [hitsz-connect-verge](https://github.com/kowyo/hitsz-connect-verge)。
+```powershell
+$config = @{}
+Get-Content .\vpn.env | Where-Object { $_ -match '^\s*[^#].*=' } | ForEach-Object {
+    $key, $value = $_ -split '=', 2
+    $config[$key.Trim()] = $value.Trim()
+}
 
-#### 直接运行
+.\sspu-connect.exe `
+    -protocol $config.VPN_PROTOCOL `
+    -server $config.VPN_SERVER `
+    -port ([int]$config.VPN_PORT) `
+    -username $config.VPN_USERNAME `
+    -password $config.VPN_PASSWORD
+```
 
-##### 使用 EasyConnect 协议
+启动成功后提供以下本地代理：
 
-+ 如果你是来自 ZJU 的用户：
+- SOCKS5：`127.0.0.1:1080`
+- HTTP：`127.0.0.1:1081`
 
-  1. 在 [Release](https://github.com/mythologyli/zju-connect/releases) 页面下载对应平台的最新版本。
+按 `Ctrl+C` 停止程序。程序会先请求服务端注销，再关闭本地代理。
 
-  2. 以 macOS 为例，解压出可执行文件 `zju-connect`。
+也可以直接传入参数：
 
-  3. macOS 需要先解除安全限制。命令行运行：`sudo xattr -rd com.apple.quarantine zju-connect`。
+```powershell
+.\sspu-connect.exe -username "学号" -password "密码"
+```
 
-  4. 命令行运行：`./zju-connect -protocol easyconnect -username <上网账户> -password <密码>`。
+直接传参可能将密码留在终端历史中，日常使用推荐 `vpn.env`。`vpn.env` 已被 Git 忽略，请勿提交、截图或上传该文件。
 
-  5. 此时 `1080` 端口为 Socks5 代理，`1081` 端口为 HTTP 代理。如需更改默认端口，请参考参数说明。
+### 从源码运行
 
-+ 如果你是非 ZJU 的用户：
+需要 Go 1.25 或更高版本：
 
-  其他步骤与上述相同，运行参数请尝试设置为：
+```powershell
+go mod download
+go run . -username "学号" -password "密码"
+```
 
-  `./zju-connect -server <服务器地址> -port <服务器端口> -username xxx -password xxx -disable-zju-config -skip-domain-resource -zju-dns-server auto`
+构建 Windows x64 可执行文件：
 
-  如果你的服务器需要输入图形验证码，运行参数请尝试设置为：
+```powershell
+$env:CGO_ENABLED = '0'
+$env:GOOS = 'windows'
+$env:GOARCH = 'amd64'
+go build -trimpath -ldflags '-s -w -buildid=' -o sspu-connect.exe .
+```
 
-  `./zju-connect -server <服务器地址> -port <服务器端口> -username xxx -password xxx -disable-zju-config -skip-domain-resource -zju-dns-server auto -disable-multi-line -graph-code-file graph_code.jpg`
+## 与 Clash 共存
 
-  登录时会将图片保存至 `graph_code.jpg` 文件，请查看并手动输入验证码。
+SSPU Connect 支持在 Clash/FlClash TUN 已开启时运行，并保留 Clash 对普通直连流量的处理，不要求绑定物理网卡绕过 Clash。
 
-  *详情见此[链接](https://github.com/Mythologyli/zju-connect/issues/65#issuecomment-2650185322)*
+推荐使用方式：
 
-##### 使用 aTrust 协议
+1. 保持 Clash 正常运行。
+2. 启动 SSPU Connect，仅暴露本地 SOCKS5/HTTP 代理。
+3. 对需要访问 SSPU VPN 资源的应用，显式使用 `127.0.0.1:1080` 或 `127.0.0.1:1081`。
+4. 不要再把 SSPU Connect 的监听端口配置成回到自身的上游代理。
 
-+ 如果你是来自 ZJU 的用户：
+当 Clash Fake-IP 被误判为 VPN 目标时，程序会拒绝连接并记录：
 
-  其他步骤与 EasyConnect 相同，运行参数请设置为：
+```text
+route host="..." destination="198.18.x.x:443" network=tcp action=REJECT reason=clash-fake-ip
+```
 
-  `./zju-connect -protocol atrust -username <上网账户> -password <密码> -client-data-file client_data.json`
+这表示域名在进入 SSPU Connect 前已被 Clash 替换成 Fake-IP。应在 Clash 规则中修正该域名的解析或代理顺序，而不是把 Fake-IP 送进 SSPU 隧道。
 
-  之后按照提示操作。如果你不希望保存登录状态，可以不填 `-client-data-file` 参数。
+如果确实需要让未命中 SSPU 规则的连接显式走 Clash HTTP 代理，可以增加：
 
-+ 如果你是非 ZJU 的用户：
+```powershell
+-dial-direct-proxy http://127.0.0.1:7890
+```
 
-  其他步骤与 ZJU 用户相同，请根据情况指定登录域及协议。
+通常不需要该参数；默认直连会继续遵循 Windows 当前系统路由，因此本机 Clash TUN 仍然生效。
 
-  **如何确定登录域及协议？**
+## 路由与 DNS
 
-  1. 运行 `./zju-connect -protocol atrust -server <服务器地址> -port <服务器端口> -auth-info`。
-  2. 该命令会获取可用的认证方式，例如
-     ```json
-     [{"loginDomain":"Radius","authType":"auth/psw","authName":"上网账号","loginUrl":""},{"loginDomain":"local","authType":"auth/psw","authName":"IDC运维账号","loginUrl":""},{"loginDomain":"radius93482","authType":"auth/psw","authName":"INTL ID","loginUrl":""}]
-     ```
-     包含三个登录方式。方式一的登录域为 `Radius`，认证类型为 `auth/psw`。如果要使用方式一登录，则需要在运行参数中添加 `-login-domain Radius -auth-type "auth/psw"`。
-  3. 目前支持的认证类型包括 `auth/psw`（密码验证）、`auth/cas`（CAS 验证）、`auth/smsCheckCode`（短信验证码验证）。
+SSPU 服务端当前不下发通用远端 DNS，这是预期行为。程序会：
 
-#### 作为服务运行
+- 使用服务端静态 DNS 表解析已下发的校内域名；
+- 使用服务端域名/IP 资源决定是否进入 VPN；
+- 其余域名通过本机/备用 DNS 解析，并按普通系统路由连接；
+- 不修改系统固定 DNS，也不会伪造“服务端已下发 DNS”。
 
-[链接](docs/service.md)
+登录后可从摘要日志确认实际资源：
 
-#### Docker 运行
+```text
+resource summary ip_rules=... domain_rules=... static_dns=... remote_dns_available=false
+```
 
-[链接](docs/docker.md)
+`remote_dns_available=false` 对 SSPU 是正常状态，不代表登录失败。
 
-### 警告
+## 会话与保活
 
-1. 当使用其他开启了 TUN 模式的代理工具，同时配合 zju-connect 作为下游代理时，请注意务必提供正确的分流规则，参考[此 issue](https://github.com/Mythologyli/zju-connect/issues/57)
+程序包含两类保活：
 
-### TUN 模式注意事项
+- EasyConnect 会话更新：固定每 60 秒请求服务端，默认开启，不依赖服务端 DNS。
+- 业务流量保活：上游的 `keep-alive-url` 机制；SSPU 无远端 DNS 时，未配置 URL 会自动停用。
 
-1. 需要管理员权限运行
+一般无需设置 `keep-alive-url`。不要使用 `-disable-keep-alive` 关闭上游业务保活后误以为会话更新也被关闭；SSPU 的会话更新由 EasyConnect 客户端生命周期独立维护。
 
-2. Windows 系统需要前往 [Wintun 官网](https://www.wintun.net)下载 `wintun.dll` 并放置于可执行文件同目录下
+如果同一账号在另一台设备或另一个进程重新登录，旧连接可能被覆盖并断开。请确保本机只运行一个 SSPU Connect 实例。
 
-3. EasyConnect 协议下的推荐配置为 `-tun-mode -add-route -dns-hijack`
+## 常用参数
 
-4. aTrust 协议下的推荐配置为 `-tun-mode -add-route -dns-hijack -fake-ip`。在使用 aTrust 协议时，如果不使用 DNS劫持/Fake IP，直接通过 TUN 网卡的涉及域名的 TCP 流量可能会出错
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `-protocol` | `easyconnect` | SSPU 使用 EasyConnect |
+| `-server` | `vpn.sspu.edu.cn` | VPN 服务端 |
+| `-port` | `443` | VPN 服务端端口 |
+| `-username` | 空 | 学号/账号 |
+| `-password` | 空 | VPN 密码 |
+| `-socks-bind` | `:1080` | SOCKS5 监听地址；仅本机使用可设为 `127.0.0.1:1080` |
+| `-http-bind` | `:1081` | HTTP 代理监听地址；设为空字符串可禁用 |
+| `-dial-direct-proxy` | 空 | 未命中 VPN 规则时使用的 HTTP 上游代理 |
+| `-custom-proxy-domain` | 空 | 强制进入 VPN 的额外域名，多个域名用逗号分隔 |
+| `-custom-dns` | 空 | 静态域名映射，格式为 `域名:IP,域名:IP` |
+| `-proxy-all` | `false` | 强制代理全部 IPv4；不建议与 Clash TUN 同时使用 |
+| `-config` | 空 | 使用 TOML 配置文件；启用后其他命令行配置不生效 |
+| `-debug-dump` | `false` | 输出调试流量，仅排错时短期开启 |
+| `-version` | — | 显示版本 |
 
-### 参数说明
+完整上游参数仍然保留，可执行 `sspu-connect.exe -h` 查看。TUN、aTrust、端口转发、Shadowsocks、证书和验证码等高级能力沿用上游实现，但未作为 SSPU 默认使用路径进行保证。
 
-#### 通用参数
+## 日志与排错
 
-+ `protocol`: 登录协议，支持 `easyconnect`/`atrust`，默认为 `easyconnect`
+正常启动应依次看到登录成功、资源摘要、代理监听和周期性会话保活日志。重点字段如下：
 
-+ `server`: VPN 服务端地址，默认为 `rvpn.zju.edu.cn`/`vpn.zju.edu.cn`
+- `action=VPN`：命中 SSPU 域名/IP 资源，连接进入隧道。
+- `action=DIRECT`：未命中 SSPU 资源，连接沿本机系统路由发出。
+- `action=REJECT reason=clash-fake-ip`：拦截 Clash Fake-IP，避免代理循环。
+- `action=REJECT reason=server-acl`：服务端 ACL 明确不允许该目标进入隧道。
+- `session keepalive status=OK`：服务端会话更新成功。
+- `remote_dns_available=false`：SSPU 未下发远端 DNS，属于正常状态。
 
-+ `port`: VPN 服务端端口，默认为 `443`
+常见问题：
 
-+ `username`: 网络账户。例如：学号
+1. **频繁出现连接失败或 SHUTDOWN**：先看目标是 `VPN`、`DIRECT` 还是 `REJECT`。错误网站被送入 VPN 可能触发服务端 ACL 或断连。
+2. **目标地址是 `198.18.x.x`**：这是 Clash Fake-IP，不是实际网站 IP；检查 Clash DNS 与分流规则。
+3. **刚连上就把另一台设备踢下线**：SSPU 只允许一个活跃连接，新登录覆盖旧登录。
+4. **运行一段时间后断开**：检查是否持续出现 `session keepalive status=OK`，以及是否有网络切换、休眠或另一处重新登录。
+5. **代理对局域网暴露**：默认 `:1080`/`:1081` 会监听所有接口。只在本机使用时显式设置 `-socks-bind 127.0.0.1:1080 -http-bind 127.0.0.1:1081`。
 
-+ `password`: 网络账户密码
+提交 Issue 前请删除账号、密码、TWFID、Cookie、token、会话 ID 和内网业务数据。即使本版本已减少敏感日志，也应人工检查后再公开日志。
 
-+ `graph-code-file`: 图形验证码文件路径。默认为空。在 aTrust 模式下，留空时使用浏览器完成验证码，设置路径则登录时会将图形验证码保存至该文件，由用户手动输入 JSON
+## 配置文件
 
-+ `disable-zju-config`: 禁用 ZJU 相关配置，非 ZJU 用户可能需要添加此参数
+仓库提供 [config.toml.example](config.toml.example)。复制后修改并运行：
 
-+ `disable-zju-dns`: 禁用远端 DNS 改用本地 DNS，一般不需要加此参数
+```powershell
+Copy-Item .\config.toml.example .\config.toml
+.\sspu-connect.exe -config .\config.toml
+```
 
-+ `socks-bind`: SOCKS5 代理监听地址，默认为 `:1080`
+包含密码的 `config.toml` 不应提交到仓库。对于本仓库的本地联调，优先使用已忽略的 `vpn.env`。
 
-+ `socks-user`: SOCKS5 代理用户名，不填则不需要认证
+## 上游同步策略
 
-+ `socks-passwd`: SOCKS5 代理密码，不填则不需要认证
+本仓库保留上游提交历史，并配置 `upstream` 指向 `Mythologyli/zju-connect`。SSPU 特有改动尽量集中在服务端兼容、路由边界、会话生命周期、日志和文档层，便于持续同步上游安全修复与协议更新。
 
-+ `http-bind`: HTTP 代理监听地址，默认为 `:1081`。为 `""` 时不启用 HTTP 代理
+上游通用问题和功能请优先在 [zju-connect](https://github.com/Mythologyli/zju-connect) 查找；仅 SSPU 环境可复现的问题请提交到本仓库。
 
-+ `shadowsocks-url`: Shadowsocks 服务端 URL。例如：`ss://aes-128-gcm:password@server:port`。格式[参考此处](https://github.com/shadowsocks/go-shadowsocks2)
+## 许可证与致谢
 
-+ `dial-direct-proxy`: 当 URL 未命中规则，切换到直连时使用代理，常用于与其他代理工具配合的场景，目前仅支持 http 代理。例如：`http://127.0.0.1:7890"`，为 `""` 时不启用
+本项目遵循仓库中的 [GPL-3.0 License](LICENSE)。
 
-+ `tcp-tunnel-mode`: TCP 隧道模式，默认为 `false`。启用后仅可通过 TCP 隧道代理 TCP 流量。由于只有 aTrust 支持 TCP 隧道，此模式在 EasyConnect 下无效。启用后会禁用 TUN 模式
-
-+ `tun-mode`: TUN 模式（实验性）。请阅读 TUN 模式注意事项
-
-+ `add-route`: 启用 TUN 模式时根据服务端下发配置添加路由
-
-+ `dns-ttl`: DNS 缓存时间，默认为 `3600` 秒
-
-+ `disable-keep-alive`: 禁用定时保活，一般不需要加此参数
-
-+ `keep-alive-url`: 使用 HTTP 保活，适用于服务端不下发 DNS 的情况。填写要访问的 URL，例如 `https://www.cnki.net/favicon.ico` 。默认为空，此时使用服务端下发的 DNS 保活
-
-+ `zju-dns-server`: 远端 DNS 服务器地址，默认为 `auto`。设置为 auto 时使用从服务端获取的 DNS 服务器，如果未能获取则禁用远端 DNS
-
-+ `secondary-dns-server`: 当使用远端 DNS 服务器无法解析时使用的备用 DNS 服务器，默认为 `114.114.114.114`。留空则使用系统默认 DNS，但在开启 `dns-hijack` 时必须设置
-
-+ `dns-server-bind`: DNS 服务器监听地址，默认为空即禁用。例如，设置为 `127.0.0.1:53`，则可向 `127.0.0.1:53` 发起 DNS 请求
-
-+ `dns-hijack`: 启用 TUN 模式时劫持 DNS 请求，建议在启用 TUN 模式时添加此参数
-
-+ `fake-ip`: 启用 Fake IP 功能，与 dns-hijack 配合使用，建议在使用 aTrust 协议并启用 TUN 模式时添加此参数。此参数在 EasyConnect 协议下无效
-
-+ `debug-dump`: 是否开启调试，一般不需要加此参数
-
-+ `bind-interface`: 手动指定 VPN 底层连接使用的网卡接口，支持 EasyConnect 和 aTrust。非空时优先使用该接口，不再自动探测
-
-+ `auto-detect-interface`: 自动探测并绑定 VPN 底层网卡，默认为 `false`。设为 `true` 时启用自动探测；未启用且未指定 `bind-interface` 时，底层连接使用系统路由。**若同时使用其他启用了 Fake IP 的 VPN，此功能可能无法正常工作**
-
-+ `tcp-port-forwarding`: TCP 端口转发，格式为 `本地地址-远程地址,本地地址-远程地址,...`，例如 `127.0.0.1:9898-10.10.98.98:80,0.0.0.0:9899-10.10.98.98:80`。多个转发用 `,` 分隔
-
-+ `udp-port-forwarding`: UDP 端口转发，格式为 `本地地址-远程地址,本地地址-远程地址,...`，例如 `127.0.0.1:53-10.10.0.21:53`。多个转发用 `,` 分隔
-
-+ `custom-dns`: 指定自定义 DNS 解析结果，格式为 `域名:IP,域名:IP,...`，例如 `www.cc98.org:10.10.98.98,appservice.zju.edu.cn:10.203.8.198`。多个解析用 `,` 分隔
-
-+ `config`: 指定配置文件，内容参考 `config.toml.example`。启用配置文件时其他参数无效
-
-#### EasyConnect 相关参数
-
-+ `totp-secret`: TOTP 密钥，可用于自动完成 TOTP 验证。如服务端无需 TOTP 验证或希望手动输入验证码，可不填
-
-+ `cert-file`: p12 证书文件路径，如果服务器要求证书验证，需要配置此参数
-
-+ `cert-password`: 证书密码
-
-+ `disable-server-config`: 禁用服务端配置，一般不需要加此参数
-
-+ `skip-domain-resource`: 不使用服务端下发的域名资源分流，一般不需要加此参数
-
-+ `disable-multi-line`: 禁用自动根据延时选择线路。加此参数后，使用 `server` 参数指定的线路
-
-+ `proxy-all`: 是否代理所有流量，一般不需要加此参数
-
-+ `custom-proxy-domain`: 指定自定义域名使用 RVPN 代理，格式为 `域名,域名,...`，例如 `nature.com,science.org`。多个域名用 `,` 分隔
-
-+ `twf-id`: twfID 登录，调试用途，一般不需要加此参数
-
-#### aTrust 相关参数
-
-+ `auth-type`: aTrust 登录验证类型，支持 `auth/psw`（密码验证）、`auth/cas`（CAS 验证）、`auth/smsCheckCode`（短信验证码验证），默认为空（尝试不验证）
-
-+ `login-domain`: 登录域，默认为 `Radius`
-
-+ `client-data-file`: 客户端数据文件路径，可用于保存登录状态，避免重复验证
-
-+ `cas-ticket`: CAS 验证票据，默认为空，此时进入交互式验证
-
-+ `phone`: 短信验证码登录时使用的手机号
-
-+ `update-best-nodes-interval`: 自动选择最优线路的更新间隔，单位为秒，默认为 `300` 秒。设置为 `0` 则禁用自动选择最优线路
-
-+ `auth-info`: 仅获取 aTrust 验证信息而不登录，一般不需要加此参数。可用于查看服务端支持的验证方式
-
-+ `trust-device`: 设置当前设备为授信终端（需要已登录的 `-client-data-file`），不启用隧道
-
-+ `untrust-device`: 从授信终端中移除当前设备（需要已登录的 `-client-data-file`），不启用隧道
-
-+ `sid`: aTrust SID，调试用途，一般不需要加此参数
-
-+ `device-id`: aTrust 设备 ID，调试用途，一般不需要加此参数
-
-+ `sign-key`: aTrust 签名密钥，调试用途，一般不需要加此参数
-
-+ `resource-file`: aTrust 资源文件，调试用途，一般不需要加此参数
-
-### 计划表
-
-#### 已完成
-
-- [x] 代理 TCP 流量
-- [x] 代理 UDP 流量
-- [x] SOCKS5 代理服务
-- [x] HTTP 代理服务
-- [x] Shadowsocks 代理服务
-- [x] 远端 DNS 解析
-- [x] ZJU 规则添加
-- [x] 支持 IPv6 直连
-- [x] DNS 缓存加速
-- [x] 自动选择线路
-- [x] TCP 端口转发功能
-- [x] UDP 端口转发功能
-- [x] 通过配置文件启动
-- [x] 定时保活
-- [x] TUN 模式
-- [x] 自动劫持 DNS
-- [x] 短信验证
-- [x] TOTP 验证
-- [x] 证书验证
-- [x] aTrust 协议支持
-- [x] Fake IP
-
-#### To Do
-
-### 贡献者
-
-<a href="https://github.com/mythologyli/zju-connect/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=mythologyli/zju-connect" />
-</a>
-
-### 感谢
-
-+ [EasierConnect](https://github.com/lyc8503/EasierConnect)
-
-+ [socks2http](https://github.com/zenhack/socks2http)
-
-+ [![image](docs/yxvm.png)](https://yxvm.com/)
-
-  [NodeSupport](https://github.com/NodeSeekDev/NodeSupport) 赞助了本项目
-
-### Star History
-
-[![Star History Chart](https://api.star-history.com/image?repos=mythologyli/zju-connect&type=date&legend=top-left)](https://www.star-history.com/?repos=mythologyli%2Fzju-connect&type=date&legend=bottom-right)
+- [Mythologyli/zju-connect](https://github.com/Mythologyli/zju-connect)
+- [lyc8503/EasierConnect](https://github.com/lyc8503/EasierConnect)
+- zju-connect 的全部贡献者与依赖项目维护者

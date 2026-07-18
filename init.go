@@ -18,7 +18,7 @@ import (
 
 var CommitID string
 
-const zjuConnectVersion = "1.2.0"
+const zjuConnectVersion = "0.1.0"
 
 func getTOMLVal[T int | uint64 | string | bool](valPointer *T, defaultVal T) T {
 	if valPointer == nil {
@@ -33,11 +33,11 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 
 	_, err := toml.DecodeFile(configFile, &confTOML)
 	if err != nil {
-		return errors.New("ZJU Connect: error parsing the config file")
+		return errors.New("SSPU Connect: error parsing the config file")
 	}
 
 	conf.Protocol = getTOMLVal(confTOML.Protocol, "easyconnect")
-	conf.ServerAddress = getTOMLVal(confTOML.ServerAddress, "rvpn.zju.edu.cn")
+	conf.ServerAddress = getTOMLVal(confTOML.ServerAddress, "vpn.sspu.edu.cn")
 	conf.ServerPort = getTOMLVal(confTOML.ServerPort, 443)
 	conf.Username = getTOMLVal(confTOML.Username, "")
 	conf.Password = getTOMLVal(confTOML.Password, "")
@@ -46,7 +46,7 @@ func parseTOMLConfig(configFile string, conf *configs.Config) error {
 	conf.CertPassword = getTOMLVal(confTOML.CertPassword, "")
 	conf.DisableServerConfig = getTOMLVal(confTOML.DisableServerConfig, false)
 	conf.SkipDomainResource = getTOMLVal(confTOML.SkipDomainResource, false)
-	conf.DisableZJUConfig = getTOMLVal(confTOML.DisableZJUConfig, false)
+	conf.DisableZJUConfig = getTOMLVal(confTOML.DisableZJUConfig, true)
 	conf.DisableRemoteDNS = getTOMLVal(confTOML.DisableRemoteDNS, false)
 	conf.DisableMultiLine = getTOMLVal(confTOML.DisableMultiLine, false)
 	conf.ProxyAll = getTOMLVal(confTOML.ProxyAll, false)
@@ -139,7 +139,7 @@ func init() {
 	atrustUntrustDevice := false
 
 	flag.StringVar(&conf.Protocol, "protocol", "easyconnect", "Protocol (easyconnect, atrust)")
-	flag.StringVar(&conf.ServerAddress, "server", "rvpn.zju.edu.cn", "EasyConnect/aTrust server address")
+	flag.StringVar(&conf.ServerAddress, "server", "vpn.sspu.edu.cn", "EasyConnect/aTrust server address")
 	flag.IntVar(&conf.ServerPort, "port", 443, "EasyConnect/aTrust port address")
 	flag.StringVar(&conf.Username, "username", "", "Your username")
 	flag.StringVar(&conf.Password, "password", "", "Your password")
@@ -148,7 +148,7 @@ func init() {
 	flag.StringVar(&conf.CertPassword, "cert-password", "", "Client certificate password")
 	flag.BoolVar(&conf.DisableServerConfig, "disable-server-config", false, "Don't parse server config")
 	flag.BoolVar(&conf.SkipDomainResource, "skip-domain-resource", false, "Don't use server domain resource to decide whether to use RVPN.")
-	flag.BoolVar(&conf.DisableZJUConfig, "disable-zju-config", false, "Don't use ZJU config (for easyconnect protocol only)")
+	flag.BoolVar(&conf.DisableZJUConfig, "disable-zju-config", true, "Don't use ZJU config (for easyconnect protocol only)")
 	flag.BoolVar(&conf.DisableRemoteDNS, "disable-zju-dns", false, "Use local DNS instead of remote DNS") // TODO: rename to disable-remote-dns
 	flag.BoolVar(&conf.DisableMultiLine, "disable-multi-line", false, "Disable multi line auto select")
 	flag.BoolVar(&conf.ProxyAll, "proxy-all", false, "Proxy all IPv4 traffic")
@@ -198,7 +198,7 @@ func init() {
 	flag.Parse()
 
 	if showVersion {
-		fmt.Printf("ZJU Connect v%s\n", zjuConnectVersion)
+		fmt.Printf("SSPU Connect v%s\n", zjuConnectVersion)
 		os.Exit(0)
 	}
 

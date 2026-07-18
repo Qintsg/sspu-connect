@@ -25,6 +25,13 @@ import (
 // client does and keeps the tunnel alive.
 var ErrACLDenied = errors.New("destination not in sangfor IPResources whitelist (would trigger tunnel SHUTDOWN)")
 
+// ErrFakeIPDestination prevents Clash-style fake addresses from being sent
+// into the VPN tunnel. Direct traffic may still use these addresses so Clash
+// can handle it normally.
+var ErrFakeIPDestination = errors.New("VPN destination resolved to Clash fake IP")
+
+var clashFakeIPRange = &net.IPNet{IP: net.IPv4(198, 18, 0, 0), Mask: net.CIDRMask(15, 32)}
+
 type Dialer struct {
 	stack                stack.Stack
 	resolver             *resolve.Resolver
@@ -69,9 +76,11 @@ func (d *Dialer) dialDirectHost(ctx context.Context, network, hostAddr string) (
 
 func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Conn, error) {
 	hostAddr := ""
-	if _, hostAddrOK := ctx.Value(resolve.ContextKeyResolveHost).(string); hostAddrOK {
+	resolveHost := ""
+	if value, hostAddrOK := ctx.Value(resolve.ContextKeyResolveHost).(string); hostAddrOK {
 		// hostAddr doesn't have port field at now
-		hostAddr = ctx.Value(resolve.ContextKeyResolveHost).(string)
+		resolveHost = value
+		hostAddr = value
 	}
 	parts := strings.Split(ipAddr, ":")
 	if len(parts) >= 2 {
@@ -95,6 +104,7 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 	}
 
 	var useVPN = false
+	routeReason := "no-vpn-rule"
 	var target *net.IPAddr
 
 	if pureIp := net.ParseIP(ip); pureIp != nil {
@@ -106,6 +116,7 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 
 	if d.alwaysUseVPN {
 		useVPN = true
+		routeReason = "proxy-all"
 	}
 
 	// Track whether dst:port matches any sangfor-issued resource. We always
@@ -119,6 +130,7 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 			if resource.Protocol == network || resource.Protocol == "all" {
 				useVPN = true
 				matchedResource = true
+				routeReason = "domain-resource"
 			}
 		}
 	}
@@ -130,11 +142,17 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 					if resource.Protocol == network || resource.Protocol == "all" {
 						useVPN = true
 						matchedResource = true
+						routeReason = "ip-resource"
 						break
 					}
 				}
 			}
 		}
+	}
+
+	if useVPN && clashFakeIPRange.Contains(target.IP) {
+		log.Printf("route host=%q destination=%q network=%s action=REJECT reason=clash-fake-ip", resolveHost, ipAddr, network)
+		return nil, ErrFakeIPDestination
 	}
 
 	// Client-side ACL enforcement: if alwaysUseVPN forced VPN routing for a
@@ -146,20 +164,20 @@ func (d *Dialer) DialIPPort(ctx context.Context, network, ipAddr string) (net.Co
 	// we have no whitelist to enforce. An empty but non-nil slice still means
 	// resources were parsed and no IP destinations are allowed.
 	if useVPN && !matchedResource && d.ipResources != nil {
-		log.Printf("ACL: refusing %s/%s — not in sangfor IPResources whitelist (would trigger tunnel SHUTDOWN)", ipAddr, network)
+		log.Printf("route host=%q destination=%q network=%s action=REJECT reason=server-acl", resolveHost, ipAddr, network)
 		return nil, ErrACLDenied
 	}
 
 	if useVPN {
 		if network == "tcp" {
-			log.Printf("%s -> VPN", ipAddr)
+			log.Printf("route host=%q destination=%q network=%s action=VPN reason=%s", resolveHost, ipAddr, network, routeReason)
 
 			return d.stack.DialTCP(ctx, &net.TCPAddr{
 				IP:   target.IP,
 				Port: port,
 			})
 		} else if network == "udp" {
-			log.Printf("%s -> VPN", ipAddr)
+			log.Printf("route host=%q destination=%q network=%s action=VPN reason=%s", resolveHost, ipAddr, network, routeReason)
 
 			return d.stack.DialUDP(ctx, &net.UDPAddr{
 				IP:   target.IP,
