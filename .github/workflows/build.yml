@@ -66,6 +66,8 @@ jobs:
     steps:
       - name: Checkout codebase
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref }}
 
       - name: Show workflow information
         id: get_filename
@@ -87,7 +89,7 @@ jobs:
         run: |
           mkdir -p build_assets
           SHORT_SHA=$(git rev-parse --short HEAD)
-          if [ "${{ github.ref_type }}" = "tag" ]; then
+          if [ "${{ github.ref_type }}" = "tag" ] || [ -n "${{ inputs.release_tag }}" ]; then
             VERSION_FLAGS=""
           else
             VERSION_FLAGS="-X 'main.CommitID=${SHORT_SHA}'"
