@@ -1,6 +1,12 @@
 name: Build
 
 on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to upload packages to (leave empty for artifacts only)
+        required: false
+        type: string
   release:
     types: [published]
   push:
@@ -59,18 +65,18 @@ jobs:
 
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Show workflow information
         id: get_filename
         run: |
-          export _NAME=$GOOS-$GOARCH$GOARM
+          export _NAME="$GOOS-$GOARCH$GOARM"
           echo "GOOS: $GOOS, GOARCH: $GOARCH, GOARM: $GOARM, RELEASE_NAME: $_NAME"
-          echo "ASSET_NAME=$_NAME" >> $GITHUB_OUTPUT
-          echo "ASSET_NAME=$_NAME" >> $GITHUB_ENV
+          echo "ASSET_NAME=$_NAME" >> "$GITHUB_OUTPUT"
+          echo "ASSET_NAME=$_NAME" >> "$GITHUB_ENV"
 
       - name: Set up Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
           go-version: ^1.25
 
@@ -96,32 +102,32 @@ jobs:
           mv sspu-connect sspu-connect.exe
 
       - name: Upload artifact
-        if: github.event_name != 'release'
+        if: github.event_name != 'release' && (github.event_name != 'workflow_dispatch' || inputs.release_tag == '')
         uses: actions/upload-artifact@v4
         with:
           name: sspu-connect-${{ steps.get_filename.outputs.ASSET_NAME }}
           path: build_assets/*
 
       - name: Create ZIP archive
-        if: github.event_name == 'release' || (github.event_name == 'push' && contains(vars.NIGHTLY_RELEASE_ENABLED_BRANCHES, github.ref_name))
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '') || (github.event_name == 'push' && contains(vars.NIGHTLY_RELEASE_ENABLED_BRANCHES, github.ref_name))
         run: |
           pushd build_assets || exit 1
-          zip -9vr ../sspu-connect-$ASSET_NAME.zip .
+          zip -9vr "../sspu-connect-$ASSET_NAME.zip" .
           popd || exit 1
 
       - name: Upload release binary
-        if: github.event_name == 'release' || (github.event_name == 'push' && contains(vars.NIGHTLY_RELEASE_ENABLED_BRANCHES, github.ref_name))
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '') || (github.event_name == 'push' && contains(vars.NIGHTLY_RELEASE_ENABLED_BRANCHES, github.ref_name))
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          gh release upload --clobber ${{ github.event_name == 'release' && github.event.release.tag_name || 'nightly' }} sspu-connect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
+          gh release upload --clobber ${{ github.event_name == 'release' && github.event.release.tag_name || (github.event_name == 'workflow_dispatch' && inputs.release_tag) || 'nightly' }} sspu-connect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
 
   nightly:
     if: github.event_name != 'release' && github.event_name == 'push' && contains(vars.NIGHTLY_RELEASE_ENABLED_BRANCHES, github.ref_name)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout codebase
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Move nightly tag
         run: |
